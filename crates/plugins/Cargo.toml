@@ -1,0 +1,10 @@
+[package]
+name = "neolog-plugins"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+neolog-core = { path = "../core" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

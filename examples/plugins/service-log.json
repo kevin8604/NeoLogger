@@ -1,0 +1,33 @@
+{
+  "id": "service-log",
+  "name": "服务日志 (service-log)",
+  "sniff": ["SERVICE"],
+  "sniff_score": 0.85,
+  "timestamp": {
+    "mode": "common",
+    "regex": "\\b\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d{1,9})?"
+  },
+  "severity": {
+    "regex": "\\[(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\]",
+    "group": 1
+  },
+  "module": {
+    "regex": "\\]\\s*([a-zA-Z0-9_.-]+):",
+    "group": 1
+  },
+  "decorate": [
+    {
+      "regex": "(?i)\\b(timeout|timed out|failed|disconnected|dropped|denied)\\b",
+      "fg": [255, 153, 102],
+      "bold": true
+    },
+    {
+      "regex": "\\b(10\\.\\d+\\.\\d+\\.\\d+|192\\.168\\.\\d+\\.\\d+)\\b",
+      "fg": [126, 214, 255]
+    }
+  ],
+  "severity_styles": [
+    { "severity": "error", "bg": [80, 20, 24], "bold": true },
+    { "severity": "warn", "bg": [64, 48, 16] }
+  ]
+}

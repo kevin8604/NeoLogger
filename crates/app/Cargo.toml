@@ -1,0 +1,21 @@
+[package]
+name = "neolog-app"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "neo-log"
+path = "src/main.rs"
+
+[dependencies]
+neolog-core = { path = "../core" }
+neolog-plugins = { path = "../plugins" }
+eframe = "0.29"
+egui = "0.29"
+rfd = "0.15"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+notify = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+unicode-width = "0.1"
