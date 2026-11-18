@@ -1418,7 +1418,7 @@ impl NeoLogApp {
                                 ("F5", "从磁盘重新加载全部文件"),
                                 ("F9", "打开 / 收起工作区侧栏（浮层，不占日志宽度）"),
                                 ("Ctrl+S", "保存当前工作区会话"),
-                                ("Ctrl+Q", "退出 neo-log（会先自动保存）"),
+                                ("Ctrl+Q", "退出 NeoLogger（会先自动保存）"),
                             ],
                         );
                         shortcut_section(
@@ -1498,14 +1498,14 @@ impl NeoLogApp {
         let mut open = self.about_open;
         let session_path = config::session_path();
         let plugins_dir = config::plugins_dir();
-        egui::Window::new("关于 neo-log")
+        egui::Window::new("关于 NeoLogger")
             .anchor(Align2::CENTER_TOP, [0.0, 140.0])
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_width(430.0);
-                ui.label(RichText::new("neo-log").size(20.0).strong());
+                ui.label(RichText::new("NeoLogger").size(20.0).strong());
                 ui.label(
                     RichText::new(format!(
                         "v{} · Notepad++ 风格的 Rust 日志分析工作台",
@@ -2051,7 +2051,7 @@ impl NeoLogApp {
             return;
         };
         let Some(path) = rfd::FileDialog::new()
-            .set_file_name("neo-log.txt")
+            .set_file_name("NeoLogger.txt")
             .add_filter("文本", &["txt", "log"])
             .save_file()
         else {
@@ -2543,7 +2543,7 @@ impl NeoLogApp {
             ui.horizontal(|ui| {
                 theme::brand(ui);
                 ui.label(
-                    RichText::new("neo-log · LOG WORKBENCH")
+                    RichText::new("NeoLogger · LOG WORKBENCH")
                         .size(9.5)
                         .color(theme::p().faint),
                 );
@@ -2823,7 +2823,7 @@ impl NeoLogApp {
         if menu_item(ui, "快捷键与提示", Some("F1"), true) {
             self.help_open = true;
         }
-        if menu_item(ui, "关于 neo-log", None, true) {
+        if menu_item(ui, "关于 NeoLogger", None, true) {
             self.about_open = true;
         }
     }
@@ -4033,7 +4033,7 @@ impl NeoLogApp {
                 );
             }
             ui.add_space(14.0);
-            ui.label(RichText::new("neo-log").size(28.0).strong());
+            ui.label(RichText::new("NeoLogger").size(28.0).strong());
             ui.label(
                 RichText::new("多文件按时间合并 · 多级过滤视图 · 书签 · 插件高亮")
                     .size(12.0)

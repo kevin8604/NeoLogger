@@ -1,4 +1,4 @@
-# neo-log
+# NeoLogger
 
 Notepad++ 风格的日志分析工作台，纯 Rust + egui 实现。
 
@@ -53,7 +53,7 @@ cargo build --release -p neolog-app
 | 主题 | `☰` → 主题 选择深色 / 浅色 / 高对比，立即生效并保存到配置目录 `ui.conf` |
 | 侧栏 | 标签行 `◧`、`F9` 或显示菜单；浮层抽屉覆盖日志左侧，不占布局宽度，`Esc`、`×` 或点击日志区收起 |
 | 日志右键 | 右键日志行：复制整行/选区/单词、书签、文字或整行高亮、按词/级别/模块在当前标签页派生过滤视图、全局搜索；折叠时展开/收起该组 |
-| 快捷键与关于 | `F1` 打开快捷键总览；帮助 → 关于 neo-log 查看版本、会话文件与插件目录 |
+| 快捷键与关于 | `F1` 打开快捷键总览；帮助 → 关于 NeoLogger 查看版本、会话文件与插件目录 |
 | 打开文件 | 文件菜单“打开日志…”、`Ctrl+O`、拖拽文件到窗口 |
 | 合并 | 侧栏勾选文件 → 文件菜单“按时间合并已勾选文件 (n)” |
 | 过滤 | 过滤栏输入查询 → “派生子视图”在当前标签页压入新层级；`＋` 或视图菜单“编辑过滤条件…”打开同样的输入行；“应用到当前”原地修改 |
@@ -106,7 +106,7 @@ cargo build --release -p neolog-app
 ```
 crates/core       neolog-core    文档/时间/合并/过滤/样式/插件契约/视图树/位图/快照
 crates/plugins    neolog-plugins 内置 Generic、ROS 2、Python logging、JSON Lines 插件 + JSON 声明式插件
-crates/app        neolog-app     egui 桌面应用（bin: neo-log），含查找/跳转/折叠/列对齐/统计窗口
+crates/app        neolog-app     egui 桌面应用（bin: NeoLogger），含查找/跳转/折叠/列对齐/统计窗口
 examples/plugins  动态插件 JSON 示例
 ```
 

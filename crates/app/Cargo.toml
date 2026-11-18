@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "neo-log"
+name = "NeoLogger"
 path = "src/main.rs"
 
 [dependencies]

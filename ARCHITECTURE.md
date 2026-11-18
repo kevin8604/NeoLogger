@@ -1,4 +1,4 @@
-# neo-log 架构设计
+# NeoLogger 架构设计
 
 一个 Notepad++ 风格的日志分析工作台：多文件按时间合并、多级过滤子视图、书签、关键词高亮、可插拔的模块日志插件、会话持久化、tail 跟随、文本选择与自动换行。
 
@@ -24,7 +24,7 @@
 neo_log/
 ├── crates/core       neolog-core    纯逻辑库：文档、时间、合并、过滤、样式、会话、视图树、位图、快照
 ├── crates/plugins    neolog-plugins 内置插件：Generic / ROS 2 / Python logging / JSON Lines + JSON 声明式插件
-├── crates/app        neolog-app     egui 桌面应用（bin: neo-log）
+├── crates/app        neolog-app     egui 桌面应用（bin: NeoLogger）
 └── examples/plugins  动态插件 JSON 示例
 ```
 
@@ -233,7 +233,7 @@ revision/视图/列宽变化
 
 轮询而非平台 inotify/ReadDirectoryChangesW，是为了零额外依赖、跨平台一致；代价是 600ms 延迟。`created` 提供 rename+新建式轮转的身份判据（文件系统不支持创建时间时为 `None`），4 KB 前缀负责发现等长的就地重写。重载失败（文件被占用）只更新状态栏，不中断跟随。
 
-书签策略：追加不移动行号，保留；轮转/截断后物理行号指向不同内容，必须丢弃并在状态栏报告数量。注意 Windows 上映射中的文件仍可被其他进程追加，但截断会被拒绝（`ERROR_USER_MAPPED_FILE`），因此 `copytruncate` 式轮转需要先关闭 neo-log 中的该文件。
+书签策略：追加不移动行号，保留；轮转/截断后物理行号指向不同内容，必须丢弃并在状态栏报告数量。注意 Windows 上映射中的文件仍可被其他进程追加，但截断会被拒绝（`ERROR_USER_MAPPED_FILE`），因此 `copytruncate` 式轮转需要先关闭 NeoLogger 中的该文件。
 
 ### 4.8 会话持久化
 
