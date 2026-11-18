@@ -260,6 +260,59 @@ pub fn doc_color(doc: u32) -> Color32 {
     DOC_PALETTE[doc as usize % DOC_PALETTE.len()]
 }
 
+/// Segoe Fluent Icons (private use). `install_fonts` loads that face as a
+/// fallback, so these marks paint at the same point size as the surrounding
+/// chrome instead of needing a second widget.
+pub const ICON_OPEN_FILE: char = '\u{E8E5}';
+pub const ICON_OPEN_DIR: char = '\u{E8B7}';
+pub const ICON_DOC: char = '\u{E8A5}';
+pub const ICON_LIBRARY: char = '\u{E8F1}';
+pub const ICON_FIND: char = '\u{E721}';
+pub const ICON_FIND_NEXT: char = '\u{E72A}';
+pub const ICON_FIND_PREV: char = '\u{E72B}';
+pub const ICON_GLOBAL: char = '\u{E774}';
+pub const ICON_GOTO: char = '\u{E7C3}';
+pub const ICON_FILTER: char = '\u{E71C}';
+pub const ICON_DERIVE: char = '\u{E710}';
+pub const ICON_REPLACE: char = '\u{E70F}';
+pub const ICON_PRESET: char = '\u{E734}';
+pub const ICON_FOLLOW: char = '\u{E74B}';
+pub const ICON_PLAIN: char = '\u{E8E4}';
+pub const ICON_WRAP: char = '\u{E7A6}';
+pub const ICON_FOLD: char = '\u{E81E}';
+pub const ICON_COLUMNS: char = '\u{E8B3}';
+pub const ICON_BOOKMARK: char = '\u{E7C1}';
+pub const ICON_EXPORT: char = '\u{EDE1}';
+pub const ICON_COMPARE: char = '\u{E90C}';
+pub const ICON_SIDEBAR: char = '\u{E8A0}';
+pub const ICON_HELP: char = '\u{E897}';
+pub const ICON_SAVE: char = '\u{E74E}';
+pub const ICON_RELOAD: char = '\u{E72C}';
+pub const ICON_COPY: char = '\u{E8C8}';
+pub const ICON_SELECT_ALL: char = '\u{E73E}';
+pub const ICON_CLEAR: char = '\u{E894}';
+pub const ICON_RENAME: char = '\u{E8AC}';
+pub const ICON_HIGHLIGHT: char = '\u{E7E6}';
+pub const ICON_ZOOM_IN: char = '\u{E8E8}';
+pub const ICON_ZOOM_OUT: char = '\u{E8E7}';
+pub const ICON_ZOOM_RESET: char = '\u{E8E9}';
+pub const ICON_TOP: char = '\u{E74A}';
+pub const ICON_QUIT: char = '\u{E7E8}';
+pub const ICON_INFO: char = '\u{E946}';
+pub const ICON_LINK: char = '\u{E71B}';
+pub const ICON_STATS: char = '\u{E9D2}';
+pub const ICON_THEME: char = '\u{E790}';
+pub const ICON_VIEW: char = '\u{E8FD}';
+pub const ICON_DISPLAY: char = '\u{E890}';
+pub const ICON_SAMPLE: char = '\u{E736}';
+/// Already covered by Segoe UI, and the help text refers to this mark.
+pub const ICON_CLOSE: char = '\u{00D7}';
+
+/// Icon and the existing short label, at one text size.
+pub fn marked(icon: char, text: &str) -> String {
+    format!("{icon} {text}")
+}
+
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
 
@@ -312,6 +365,31 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts
         .families
         .insert(FontFamily::Name("mono-bold".into()), bold_family);
+
+    // Same loading path as Segoe UI / YaHei: one small system icon face,
+    // used only for the private-use marks above.
+    for path in [
+        "C:/Windows/Fonts/SegoeIcons.ttf",
+        "C:/Windows/Fonts/segmdl2.ttf",
+    ] {
+        if let Ok(bytes) = std::fs::read(path) {
+            fonts
+                .font_data
+                .insert("icons".to_owned(), FontData::from_owned(bytes));
+            for family in [
+                FontFamily::Proportional,
+                FontFamily::Monospace,
+                FontFamily::Name("mono-bold".into()),
+            ] {
+                fonts
+                    .families
+                    .entry(family)
+                    .or_default()
+                    .push("icons".to_owned());
+            }
+            break;
+        }
+    }
 
     ctx.set_fonts(fonts);
 }

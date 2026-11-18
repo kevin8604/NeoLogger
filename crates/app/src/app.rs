@@ -1166,7 +1166,7 @@ impl NeoLogApp {
             return;
         }
         ui.horizontal(|ui| {
-            ui.label(RichText::new("查找").color(theme::p().dim));
+            ui.label(RichText::new(theme::marked(theme::ICON_FIND, "查找")).color(theme::p().dim));
             let id = egui::Id::new("find-input");
             let resp = ui.add(
                 TextEdit::singleline(&mut self.find_input)
@@ -2549,13 +2549,27 @@ impl NeoLogApp {
                 );
             });
             ui.separator();
-            ui.menu_button("文件", |ui| self.file_menu(ui));
-            ui.menu_button("编辑", |ui| self.edit_menu(ui));
-            ui.menu_button("显示", |ui| self.display_menu(ui));
-            ui.menu_button("主题", |ui| self.theme_menu(ui));
-            ui.menu_button("视图", |ui| self.tree_menu(ui));
-            ui.menu_button("高亮", |ui| self.highlight_menu(ui));
-            ui.menu_button("帮助", |ui| self.help_menu(ui));
+            ui.menu_button(theme::marked(theme::ICON_OPEN_FILE, "文件"), |ui| {
+                self.file_menu(ui);
+            });
+            ui.menu_button(theme::marked(theme::ICON_REPLACE, "编辑"), |ui| {
+                self.edit_menu(ui);
+            });
+            ui.menu_button(theme::marked(theme::ICON_DISPLAY, "显示"), |ui| {
+                self.display_menu(ui);
+            });
+            ui.menu_button(theme::marked(theme::ICON_THEME, "主题"), |ui| {
+                self.theme_menu(ui);
+            });
+            ui.menu_button(theme::marked(theme::ICON_VIEW, "视图"), |ui| {
+                self.tree_menu(ui);
+            });
+            ui.menu_button(theme::marked(theme::ICON_HIGHLIGHT, "高亮"), |ui| {
+                self.highlight_menu(ui);
+            });
+            ui.menu_button(theme::marked(theme::ICON_HELP, "帮助"), |ui| {
+                self.help_menu(ui);
+            });
         });
         response
             .response
@@ -2618,15 +2632,22 @@ impl NeoLogApp {
     }
 
     fn file_menu(&mut self, ui: &mut Ui) {
-        if menu_item(ui, "打开日志…", Some("Ctrl+O"), true) {
+        if menu_item(ui, theme::ICON_OPEN_FILE, "打开日志…", Some("Ctrl+O"), true) {
             self.open_requested = true;
         }
-        if menu_item(ui, "打开目录…", Some("Ctrl+Shift+O"), true) {
+        if menu_item(
+            ui,
+            theme::ICON_OPEN_DIR,
+            "打开目录…",
+            Some("Ctrl+Shift+O"),
+            true,
+        ) {
             self.pick_dir();
             ui.close_menu();
         }
         if menu_item(
             ui,
+            theme::ICON_RELOAD,
             "重新加载全部",
             Some("F5"),
             !self.session.docs().is_empty(),
@@ -2635,22 +2656,28 @@ impl NeoLogApp {
         }
         let merge_count = self.merge_selected.iter().filter(|flag| **flag).count();
         let merge_label = format!("按时间合并已勾选文件 ({merge_count})");
-        if menu_item(ui, &merge_label, None, merge_count > 0) {
+        if menu_item(ui, theme::ICON_LIBRARY, &merge_label, None, merge_count > 0) {
             self.merge_selected_docs();
         }
-        if menu_item(ui, "导出当前视图…", None, self.active.last().is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_EXPORT,
+            "导出当前视图…",
+            None,
+            self.active.last().is_some(),
+        ) {
             self.export_active();
             ui.close_menu();
         }
         ui.separator();
-        if menu_item(ui, "保存会话", Some("Ctrl+S"), true) {
+        if menu_item(ui, theme::ICON_SAVE, "保存会话", Some("Ctrl+S"), true) {
             self.save_session(false);
         }
-        if menu_item(ui, "加载示例日志", None, true) {
+        if menu_item(ui, theme::ICON_SAMPLE, "加载示例日志", None, true) {
             self.load_demo();
         }
         ui.separator();
-        if menu_item(ui, "退出", Some("Ctrl+Q"), true) {
+        if menu_item(ui, theme::ICON_QUIT, "退出", Some("Ctrl+Q"), true) {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -2660,36 +2687,78 @@ impl NeoLogApp {
             .selection
             .is_some_and(|selection| !selection.is_empty())
             || self.selected.is_some();
-        if menu_item(ui, "复制", Some("Ctrl+C"), has_selection) {
+        if menu_item(ui, theme::ICON_COPY, "复制", Some("Ctrl+C"), has_selection) {
             self.copy_to_clipboard(ui.ctx());
         }
-        if menu_item(ui, "全选", Some("Ctrl+A"), self.active.last().is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_SELECT_ALL,
+            "全选",
+            Some("Ctrl+A"),
+            self.active.last().is_some(),
+        ) {
             self.select_all();
         }
-        if menu_item(ui, "清除选择", Some("Esc"), self.selection.is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_CLEAR,
+            "清除选择",
+            Some("Esc"),
+            self.selection.is_some(),
+        ) {
             self.selection = None;
         }
         ui.separator();
-        if menu_item(ui, "查找…", Some("Ctrl+F"), true) {
+        if menu_item(ui, theme::ICON_FIND, "查找…", Some("Ctrl+F"), true) {
             self.open_find();
         }
-        if menu_item(ui, "查找下一个", Some("F3"), self.find_open) {
+        if menu_item(
+            ui,
+            theme::ICON_FIND_NEXT,
+            "查找下一个",
+            Some("F3"),
+            self.find_open,
+        ) {
             self.find_step(true);
         }
-        if menu_item(ui, "查找上一个", Some("Shift+F3"), self.find_open) {
+        if menu_item(
+            ui,
+            theme::ICON_FIND_PREV,
+            "查找上一个",
+            Some("Shift+F3"),
+            self.find_open,
+        ) {
             self.find_step(false);
         }
-        if menu_item(ui, "全局搜索…", Some("Ctrl+Shift+F"), true) {
+        if menu_item(
+            ui,
+            theme::ICON_GLOBAL,
+            "全局搜索…",
+            Some("Ctrl+Shift+F"),
+            true,
+        ) {
             self.open_global_search();
         }
-        if menu_item(ui, "跳转到行…", Some("Ctrl+G"), true) {
+        if menu_item(ui, theme::ICON_GOTO, "跳转到行…", Some("Ctrl+G"), true) {
             self.open_goto();
         }
         ui.separator();
-        if menu_item(ui, "切换书签", Some("Ctrl+B"), self.selected.is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_BOOKMARK,
+            "切换书签",
+            Some("Ctrl+B"),
+            self.selected.is_some(),
+        ) {
             self.toggle_selected_bookmark();
         }
-        if menu_item(ui, "仅书签视图", None, self.active.last().is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_BOOKMARK,
+            "仅书签视图",
+            None,
+            self.active.last().is_some(),
+        ) {
             self.fork_bookmarks();
         }
     }
@@ -2697,7 +2766,10 @@ impl NeoLogApp {
     fn display_menu(&mut self, ui: &mut Ui) {
         let mut sidebar = self.sidebar_open;
         if ui
-            .checkbox(&mut sidebar, "工作区侧栏")
+            .checkbox(
+                &mut sidebar,
+                theme::marked(theme::ICON_SIDEBAR, "工作区侧栏"),
+            )
             .on_hover_text("浮层抽屉，不占用日志区宽度 (F9)")
             .changed()
         {
@@ -2705,56 +2777,80 @@ impl NeoLogApp {
         }
         let mut filter_bar = self.filter_bar_open;
         if ui
-            .checkbox(&mut filter_bar, "过滤栏")
+            .checkbox(&mut filter_bar, theme::marked(theme::ICON_FILTER, "过滤栏"))
             .on_hover_text("收起或展开顶部过滤栏；过滤条件、视图与书签保持不变")
             .changed()
         {
             self.set_filter_bar(filter_bar);
         }
         let mut follow = self.follow;
-        if ui.checkbox(&mut follow, "跟随尾部").changed() {
+        if ui
+            .checkbox(&mut follow, theme::marked(theme::ICON_FOLLOW, "跟随尾部"))
+            .changed()
+        {
             self.set_follow(follow);
         }
         ui.separator();
         ui.label(RichText::new("阅读方式").size(10.5).color(theme::p().faint));
         let mode = self.reading();
-        for (choice, label) in [
-            (Reading::Plain, "原文"),
-            (Reading::Wrap, "换行"),
-            (Reading::Fold, "折叠重复"),
-            (Reading::Columns, "分列"),
+        for (choice, icon, label) in [
+            (Reading::Plain, theme::ICON_PLAIN, "原文"),
+            (Reading::Wrap, theme::ICON_WRAP, "换行"),
+            (Reading::Fold, theme::ICON_FOLD, "折叠重复"),
+            (Reading::Columns, theme::ICON_COLUMNS, "分列"),
         ] {
-            if ui.radio(mode == choice, label).clicked() {
+            if ui
+                .radio(mode == choice, theme::marked(icon, label))
+                .clicked()
+            {
                 self.set_reading(choice);
                 ui.close_menu();
             }
         }
         let mut stats = self.stats_open;
         if ui
-            .checkbox(&mut stats, "统计窗口")
+            .checkbox(&mut stats, theme::marked(theme::ICON_STATS, "统计窗口"))
             .on_hover_text("浮动窗口，可拖动/缩放，不占用日志宽度")
             .changed()
         {
             self.set_stats(stats);
         }
         ui.separator();
-        if menu_item(ui, "放大字号", Some("Ctrl++"), self.font_size < FONT_MAX) {
+        if menu_item(
+            ui,
+            theme::ICON_ZOOM_IN,
+            "放大字号",
+            Some("Ctrl++"),
+            self.font_size < FONT_MAX,
+        ) {
             self.zoom_font(1.0);
         }
-        if menu_item(ui, "缩小字号", Some("Ctrl+-"), self.font_size > FONT_MIN) {
+        if menu_item(
+            ui,
+            theme::ICON_ZOOM_OUT,
+            "缩小字号",
+            Some("Ctrl+-"),
+            self.font_size > FONT_MIN,
+        ) {
             self.zoom_font(-1.0);
         }
         let reset_enabled = (self.font_size - log_view::FONT_SIZE).abs() > 0.05;
-        if menu_item(ui, "重置字号", Some("Ctrl+0"), reset_enabled) {
+        if menu_item(
+            ui,
+            theme::ICON_ZOOM_RESET,
+            "重置字号",
+            Some("Ctrl+0"),
+            reset_enabled,
+        ) {
             self.reset_zoom();
         }
         ui.separator();
         let has_view = self.active.last().is_some();
-        if menu_item(ui, "跳到顶部", Some("Home"), has_view) {
+        if menu_item(ui, theme::ICON_TOP, "跳到顶部", Some("Home"), has_view) {
             self.pending_scroll = Some(log_view::Scroll::Offset(0.0));
             self.status = "已跳到顶部".to_string();
         }
-        if menu_item(ui, "跳到底部", Some("End"), has_view) {
+        if menu_item(ui, theme::ICON_FOLLOW, "跳到底部", Some("End"), has_view) {
             self.pending_scroll = Some(log_view::Scroll::Offset(f32::MAX));
             self.status = "已跳到底部".to_string();
         }
@@ -2762,29 +2858,54 @@ impl NeoLogApp {
 
     fn tree_menu(&mut self, ui: &mut Ui) {
         let active = self.active.last().copied();
-        if menu_item(ui, "派生过滤视图", None, active.is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_DERIVE,
+            "派生过滤视图",
+            None,
+            active.is_some(),
+        ) {
             self.fork_active();
         }
-        if menu_item(ui, "编辑过滤条件…", None, active.is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_REPLACE,
+            "编辑过滤条件…",
+            None,
+            active.is_some(),
+        ) {
             self.focus_filter();
         }
-        if menu_item(ui, "替换当前过滤", None, active.is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_REPLACE,
+            "替换当前过滤",
+            None,
+            active.is_some(),
+        ) {
             self.apply_filter();
         }
         ui.separator();
-        if menu_item(ui, "重命名 / 备注…", Some("F2"), active.is_some()) {
+        if menu_item(
+            ui,
+            theme::ICON_RENAME,
+            "重命名 / 备注…",
+            Some("F2"),
+            active.is_some(),
+        ) {
             self.rename_active();
         }
         let has_parent = active
             .and_then(|id| self.session.view(id))
             .and_then(|view| view.parent)
             .is_some();
-        if menu_item(ui, "关闭当前子标签", None, has_parent) {
+        if menu_item(ui, theme::ICON_CLOSE, "关闭当前子标签", None, has_parent) {
             self.remove_active_level();
         }
         ui.separator();
         if menu_item(
             ui,
+            theme::ICON_CLOSE,
             "关闭当前标签页",
             Some("Ctrl+W"),
             self.active.first().is_some(),
@@ -2806,24 +2927,42 @@ impl NeoLogApp {
         });
         ui.separator();
         let has_keyword = !self.keyword_input.trim().is_empty();
-        if menu_item(ui, "整行高亮关键词", None, has_keyword) {
+        if menu_item(
+            ui,
+            theme::ICON_HIGHLIGHT,
+            "整行高亮关键词",
+            None,
+            has_keyword,
+        ) {
             self.add_keyword_rule(false);
         }
-        if menu_item(ui, "文字高亮关键词", None, has_keyword) {
+        if menu_item(
+            ui,
+            theme::ICON_HIGHLIGHT,
+            "文字高亮关键词",
+            None,
+            has_keyword,
+        ) {
             self.add_keyword_rule(true);
         }
         ui.separator();
         let rules = self.session.rules().len();
-        if menu_item(ui, &format!("清除全部高亮规则 ({rules})"), None, rules > 0) {
+        if menu_item(
+            ui,
+            theme::ICON_CLEAR,
+            &format!("清除全部高亮规则 ({rules})"),
+            None,
+            rules > 0,
+        ) {
             self.clear_rules();
         }
     }
 
     fn help_menu(&mut self, ui: &mut Ui) {
-        if menu_item(ui, "快捷键与提示", Some("F1"), true) {
+        if menu_item(ui, theme::ICON_HELP, "快捷键与提示", Some("F1"), true) {
             self.help_open = true;
         }
-        if menu_item(ui, "关于 NeoLogger", None, true) {
+        if menu_item(ui, theme::ICON_INFO, "关于 NeoLogger", None, true) {
             self.about_open = true;
         }
     }
@@ -2865,9 +3004,13 @@ impl NeoLogApp {
             };
             let toggle = ui
                 .add(
-                    egui::Button::new(RichText::new("◧").size(13.0).color(toggle_tint))
-                        .frame(false)
-                        .min_size(egui::Vec2::new(22.0, 22.0)),
+                    egui::Button::new(
+                        RichText::new(theme::ICON_SIDEBAR.to_string())
+                            .size(13.0)
+                            .color(toggle_tint),
+                    )
+                    .frame(false)
+                    .min_size(egui::Vec2::new(22.0, 22.0)),
                 )
                 .on_hover_text("工作区侧栏：打开 / 收起 (F9) · 浮层显示，不占日志宽度");
             if toggle.clicked() {
@@ -2875,9 +3018,13 @@ impl NeoLogApp {
             }
             if ui
                 .add(
-                    egui::Button::new(RichText::new("打开").size(12.0).color(p.text))
-                        .frame(false)
-                        .min_size(egui::Vec2::new(0.0, 22.0)),
+                    egui::Button::new(
+                        RichText::new(theme::marked(theme::ICON_OPEN_FILE, "打开"))
+                            .size(12.0)
+                            .color(p.text),
+                    )
+                    .frame(false)
+                    .min_size(egui::Vec2::new(0.0, 22.0)),
                 )
                 .on_hover_text("打开日志文件 (Ctrl+O)")
                 .clicked()
@@ -2886,11 +3033,15 @@ impl NeoLogApp {
             }
             if ui
                 .add(
-                    egui::Button::new(RichText::new("查找").size(12.0).color(if self.find_open {
-                        p.accent_strong
-                    } else {
-                        p.text
-                    }))
+                    egui::Button::new(
+                        RichText::new(theme::marked(theme::ICON_FIND, "查找"))
+                            .size(12.0)
+                            .color(if self.find_open {
+                                p.accent_strong
+                            } else {
+                                p.text
+                            }),
+                    )
                     .frame(false)
                     .min_size(egui::Vec2::new(0.0, 22.0)),
                 )
@@ -2931,9 +3082,9 @@ impl NeoLogApp {
                                     };
                                     let title = truncate_chars(&view.title, 22);
                                     let kind = if matches!(view.base, Base::Merged(_)) {
-                                        "⇄"
+                                        theme::ICON_LIBRARY
                                     } else {
-                                        "▤"
+                                        theme::ICON_DOC
                                     };
                                     let is_active = active_root == Some(*root);
                                     let mut hint = view.title.clone();
@@ -2957,9 +3108,15 @@ impl NeoLogApp {
                                     frame.show(ui, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.spacing_mut().item_spacing.x = 4.0;
-                                            ui.label(RichText::new(kind).size(9.5).color(
-                                                if is_active { p.accent_strong } else { p.faint },
-                                            ));
+                                            ui.label(
+                                                RichText::new(kind.to_string()).size(12.0).color(
+                                                    if is_active {
+                                                        p.accent_strong
+                                                    } else {
+                                                        p.faint
+                                                    },
+                                                ),
+                                            );
                                             let resp = ui.add(
                                                 egui::Button::new(
                                                     RichText::new(&title).size(12.0).color(
@@ -2973,15 +3130,33 @@ impl NeoLogApp {
                                                 activate = Some(*root);
                                             }
                                             resp.on_hover_text(&hint).context_menu(|ui| {
-                                                if ui.button("重命名 / 备注…").clicked() {
+                                                if ui
+                                                    .button(theme::marked(
+                                                        theme::ICON_RENAME,
+                                                        "重命名 / 备注…",
+                                                    ))
+                                                    .clicked()
+                                                {
                                                     rename = Some(*root);
                                                     ui.close_menu();
                                                 }
-                                                if ui.button("在右侧对照").clicked() {
+                                                if ui
+                                                    .button(theme::marked(
+                                                        theme::ICON_COMPARE,
+                                                        "在右侧对照",
+                                                    ))
+                                                    .clicked()
+                                                {
                                                     side = Some(*root);
                                                     ui.close_menu();
                                                 }
-                                                if ui.button("关闭标签页").clicked() {
+                                                if ui
+                                                    .button(theme::marked(
+                                                        theme::ICON_CLOSE,
+                                                        "关闭标签页",
+                                                    ))
+                                                    .clicked()
+                                                {
                                                     close = Some(*root);
                                                     ui.close_menu();
                                                 }
@@ -3050,7 +3225,7 @@ impl NeoLogApp {
         ui.add_space(1.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 3.0;
-            let crumb_w = (ui.available_width() - 340.0).max(80.0);
+            let crumb_w = (ui.available_width() - 460.0).max(80.0);
             ui.allocate_ui_with_layout(
                 egui::Vec2::new(crumb_w, 22.0),
                 Layout::left_to_right(Align::Center),
@@ -3135,11 +3310,23 @@ impl NeoLogApp {
                                                 jump = Some(*id);
                                             }
                                             resp.context_menu(|ui| {
-                                                if ui.button("重命名 / 备注…").clicked() {
+                                                if ui
+                                                    .button(theme::marked(
+                                                        theme::ICON_RENAME,
+                                                        "重命名 / 备注…",
+                                                    ))
+                                                    .clicked()
+                                                {
                                                     rename = Some(*id);
                                                     ui.close_menu();
                                                 }
-                                                if !is_root && ui.button("关闭这个子标签").clicked()
+                                                if !is_root
+                                                    && ui
+                                                        .button(theme::marked(
+                                                            theme::ICON_CLOSE,
+                                                            "关闭这个子标签",
+                                                        ))
+                                                        .clicked()
                                                 {
                                                     remove = Some(*id);
                                                     ui.close_menu();
@@ -3175,16 +3362,16 @@ impl NeoLogApp {
                         .color(theme::p().faint),
                 )
                 .on_hover_text("当前视图行数 / 全部文件行数");
-                if mode_button(ui, "跟随", self.follow) {
+                if mode_button(ui, theme::ICON_FOLLOW, "跟随", self.follow) {
                     follow = Some(!self.follow);
                 }
-                for (choice, label) in [
-                    (Reading::Columns, "分列"),
-                    (Reading::Fold, "折叠"),
-                    (Reading::Wrap, "换行"),
-                    (Reading::Plain, "原文"),
+                for (choice, icon, label) in [
+                    (Reading::Columns, theme::ICON_COLUMNS, "分列"),
+                    (Reading::Fold, theme::ICON_FOLD, "折叠"),
+                    (Reading::Wrap, theme::ICON_WRAP, "换行"),
+                    (Reading::Plain, theme::ICON_PLAIN, "原文"),
                 ] {
-                    if mode_button(ui, label, mode == choice) {
+                    if mode_button(ui, icon, label, mode == choice) {
                         reading = Some(choice);
                     }
                 }
@@ -3217,8 +3404,12 @@ impl NeoLogApp {
         let focus = std::mem::take(&mut self.filter_focus);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ui.label(RichText::new("过滤").size(11.0).color(theme::p().faint));
-            let width = (ui.available_width() - 220.0).clamp(140.0, 640.0);
+            ui.label(
+                RichText::new(theme::marked(theme::ICON_FILTER, "过滤"))
+                    .size(11.0)
+                    .color(theme::p().faint),
+            );
+            let width = (ui.available_width() - 300.0).clamp(140.0, 640.0);
             let resp = ui.add(
                 TextEdit::singleline(&mut self.filter_input)
                     .desired_width(width)
@@ -3230,7 +3421,7 @@ impl NeoLogApp {
             }
             let enter = resp.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
             if ui
-                .button("派生")
+                .button(theme::marked(theme::ICON_DERIVE, "派生"))
                 .on_hover_text("在当前视图下新开一个子标签，父视图还在")
                 .clicked()
                 || enter
@@ -3238,16 +3429,24 @@ impl NeoLogApp {
                 self.fork_active();
             }
             if ui
-                .button("替换当前")
+                .button(theme::marked(theme::ICON_REPLACE, "替换当前"))
                 .on_hover_text("改写这一级的过滤，不新增层级")
                 .clicked()
             {
                 self.apply_filter();
             }
-            if ui.button("?").on_hover_text("过滤语法").clicked() {
+            if ui
+                .button(theme::ICON_HELP.to_string())
+                .on_hover_text("过滤语法")
+                .clicked()
+            {
                 self.filter_help = !self.filter_help;
             }
-            if ui.button("预设").on_hover_text("保存或套用查询").clicked() {
+            if ui
+                .button(theme::marked(theme::ICON_PRESET, "预设"))
+                .on_hover_text("保存或套用查询")
+                .clicked()
+            {
                 self.preset_name = truncate_chars(self.filter_input.trim(), 24);
                 self.preset_open = true;
             }
@@ -3319,7 +3518,11 @@ impl NeoLogApp {
 
         theme::card().show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("文档").size(12.0).strong());
+                ui.label(
+                    RichText::new(theme::marked(theme::ICON_DOC, "文档"))
+                        .size(12.0)
+                        .strong(),
+                );
                 theme::chip(
                     ui,
                     docs.len().to_string(),
@@ -3392,7 +3595,7 @@ impl NeoLogApp {
                     if *bookmarks > 0 {
                         theme::chip(
                             ui,
-                            format!("★ {bookmarks}"),
+                            format!("{} {bookmarks}", theme::ICON_BOOKMARK),
                             theme::p().bookmark,
                             theme::p().surface_high,
                         );
@@ -3408,7 +3611,10 @@ impl NeoLogApp {
             if ui
                 .add_enabled(
                     selected > 0,
-                    egui::Button::new(format!("按时间合并已选 ({selected})")),
+                    egui::Button::new(theme::marked(
+                        theme::ICON_LIBRARY,
+                        &format!("按时间合并已选 ({selected})"),
+                    )),
                 )
                 .clicked()
             {
@@ -3564,7 +3770,11 @@ impl NeoLogApp {
         let mut remove = None;
         theme::card().show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("高亮规则").size(12.0).strong());
+                ui.label(
+                    RichText::new(theme::marked(theme::ICON_HIGHLIGHT, "高亮规则"))
+                        .size(12.0)
+                        .strong(),
+                );
                 theme::chip(
                     ui,
                     rules.len().to_string(),
@@ -3616,7 +3826,11 @@ impl NeoLogApp {
         let rows = self.session.bookmarked_rows(view);
         theme::card().show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("书签").size(12.0).strong());
+                ui.label(
+                    RichText::new(theme::marked(theme::ICON_BOOKMARK, "书签"))
+                        .size(12.0)
+                        .strong(),
+                );
                 theme::chip(
                     ui,
                     rows.len().to_string(),
@@ -3736,16 +3950,27 @@ impl NeoLogApp {
                         .color(theme::p().dim),
                 );
                 ui.add_space(8.0);
-                if ui.button("编辑条件").clicked() {
+                if ui
+                    .button(theme::marked(theme::ICON_REPLACE, "编辑条件"))
+                    .clicked()
+                {
                     self.focus_filter();
                 }
-                if has_parent && ui.button("回到上一层").clicked() {
+                if has_parent
+                    && ui
+                        .button(theme::marked(theme::ICON_TOP, "回到上一层"))
+                        .clicked()
+                {
                     if let Some(parent) = self.session.view(active).and_then(|view| view.parent) {
                         self.set_active_path(self.session.view_path(parent));
                         self.status = "已切回上一层，子标签还在".to_string();
                     }
                 }
-                if has_parent && ui.button("关闭这个子标签").clicked() {
+                if has_parent
+                    && ui
+                        .button(theme::marked(theme::ICON_CLOSE, "关闭这个子标签"))
+                        .clicked()
+                {
                     self.remove_active_level();
                 }
             });
@@ -3829,7 +4054,10 @@ impl NeoLogApp {
             if ui.checkbox(&mut sync, "同步滚动").changed() {
                 self.side_sync = sync;
             }
-            if ui.small_button("关闭").clicked() {
+            if ui
+                .small_button(theme::marked(theme::ICON_CLOSE, "关闭"))
+                .clicked()
+            {
                 self.side_root = None;
                 self.side_scroll = None;
             }
@@ -4040,11 +4268,16 @@ impl NeoLogApp {
                     .color(theme::p().dim),
             );
             ui.add_space(20.0);
-            if theme::primary_button(ui, "打开日志文件").clicked() {
+            if theme::primary_button(ui, &theme::marked(theme::ICON_OPEN_FILE, "打开日志文件"))
+                .clicked()
+            {
                 self.open_requested = true;
             }
             ui.add_space(4.0);
-            if ui.button("加载示例日志").clicked() {
+            if ui
+                .button(theme::marked(theme::ICON_SAMPLE, "加载示例日志"))
+                .clicked()
+            {
                 self.load_demo();
             }
             ui.add_space(12.0);
@@ -4530,14 +4763,14 @@ fn glob_match(name: &str, pattern: &str) -> bool {
     rec(name.as_bytes(), pattern.as_bytes())
 }
 
-fn mode_button(ui: &mut Ui, label: &str, on: bool) -> bool {
+fn mode_button(ui: &mut Ui, icon: char, label: &str, on: bool) -> bool {
     let p = theme::p();
     ui.add(
-        egui::Button::new(RichText::new(label).size(11.0).color(if on {
-            p.accent_strong
-        } else {
-            p.dim
-        }))
+        egui::Button::new(
+            RichText::new(theme::marked(icon, label))
+                .size(11.0)
+                .color(if on { p.accent_strong } else { p.dim }),
+        )
         .frame(true)
         .fill(if on {
             p.accent_soft
@@ -4550,8 +4783,8 @@ fn mode_button(ui: &mut Ui, label: &str, on: bool) -> bool {
     .clicked()
 }
 
-fn menu_item(ui: &mut Ui, label: &str, shortcut: Option<&str>, enabled: bool) -> bool {
-    let mut button = egui::Button::new(label);
+fn menu_item(ui: &mut Ui, icon: char, label: &str, shortcut: Option<&str>, enabled: bool) -> bool {
+    let mut button = egui::Button::new(theme::marked(icon, label));
     if let Some(shortcut) = shortcut {
         button = button.shortcut_text(shortcut);
     }

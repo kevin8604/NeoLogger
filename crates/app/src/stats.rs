@@ -74,7 +74,11 @@ pub fn show(
 
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("统计").strong().size(14.0));
+        ui.label(
+            RichText::new(theme::marked(theme::ICON_STATS, "统计"))
+                .strong()
+                .size(14.0),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             theme::chip(
                 ui,

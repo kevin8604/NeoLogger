@@ -770,8 +770,9 @@ pub fn show(
     out
 }
 
-fn menu_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    ui.add_enabled(enabled, egui::Button::new(label)).clicked()
+fn menu_button(ui: &mut egui::Ui, icon: char, label: &str, enabled: bool) -> bool {
+    ui.add_enabled(enabled, egui::Button::new(theme::marked(icon, label)))
+        .clicked()
 }
 
 fn short_label(text: &str, max: usize) -> String {
@@ -824,18 +825,23 @@ fn row_context_menu(
             .map(str::to_string);
         let marked = session.is_bookmarked(lr);
 
-        if menu_button(ui, "复制整行", true) {
+        if menu_button(ui, theme::ICON_COPY, "复制整行", true) {
             out.action = Some(RowAction::CopyLine(lr));
             ui.close_menu();
         }
         if let Some(selected) = selected_text {
-            if menu_button(ui, "复制选中内容", true) {
+            if menu_button(ui, theme::ICON_COPY, "复制选中内容", true) {
                 out.action = Some(RowAction::CopyText(selected));
                 ui.close_menu();
             }
         }
         if let Some(word) = &word {
-            if menu_button(ui, &format!("复制 \"{}\"", short_label(word, 20)), true) {
+            if menu_button(
+                ui,
+                theme::ICON_COPY,
+                &format!("复制 \"{}\"", short_label(word, 20)),
+                true,
+            ) {
                 out.action = Some(RowAction::CopyText(word.clone()));
                 ui.close_menu();
             }
@@ -847,12 +853,12 @@ fn row_context_menu(
         } else {
             "添加书签"
         };
-        if menu_button(ui, bookmark, true) {
+        if menu_button(ui, theme::ICON_BOOKMARK, bookmark, true) {
             out.action = Some(RowAction::ToggleBookmark(lr));
             ui.close_menu();
         }
         if let Some(word) = &word {
-            if menu_button(ui, "高亮这个词…", true) {
+            if menu_button(ui, theme::ICON_HIGHLIGHT, "高亮这个词…", true) {
                 out.action = Some(RowAction::Highlight {
                     line: lr,
                     word: word.clone(),
@@ -864,19 +870,34 @@ fn row_context_menu(
 
         ui.separator();
         if let Some(word) = &word {
-            if menu_button(ui, &format!("筛选包含 \"{}\"", short_label(word, 18)), true) {
+            if menu_button(
+                ui,
+                theme::ICON_FILTER,
+                &format!("筛选包含 \"{}\"", short_label(word, 18)),
+                true,
+            ) {
                 out.action = Some(RowAction::FilterWord(word.clone()));
                 ui.close_menu();
             }
         }
         if let Some(severity) = severity {
-            if menu_button(ui, &format!("只显示 {} 级", severity.label()), true) {
+            if menu_button(
+                ui,
+                theme::ICON_FILTER,
+                &format!("只显示 {} 级", severity.label()),
+                true,
+            ) {
                 out.action = Some(RowAction::FilterLevel(severity));
                 ui.close_menu();
             }
         }
         if let Some(module) = &module {
-            if menu_button(ui, &format!("只显示模块 {}", short_label(module, 16)), true) {
+            if menu_button(
+                ui,
+                theme::ICON_FILTER,
+                &format!("只显示模块 {}", short_label(module, 16)),
+                true,
+            ) {
                 out.action = Some(RowAction::FilterModule(module.clone()));
                 ui.close_menu();
             }
@@ -886,7 +907,7 @@ fn row_context_menu(
             ui.separator();
             for id in ids {
                 let label = format!("串起 {}={}", id.key, short_label(&id.value, 18));
-                if menu_button(ui, &label, true) {
+                if menu_button(ui, theme::ICON_LINK, &label, true) {
                     out.action = Some(RowAction::Correlate {
                         key: id.key,
                         value: id.value,
@@ -896,7 +917,7 @@ fn row_context_menu(
             }
         }
         if let Some(word) = &word {
-            if menu_button(ui, "在全部文件中搜索该词", true) {
+            if menu_button(ui, theme::ICON_GLOBAL, "在全部文件中搜索该词", true) {
                 out.action = Some(RowAction::GlobalSearch(word.clone()));
                 ui.close_menu();
             }
@@ -909,7 +930,7 @@ fn row_context_menu(
             } else {
                 format!("展开这 {} 行", fold.len)
             };
-            if menu_button(ui, &label, true) {
+            if menu_button(ui, theme::ICON_FOLD, &label, true) {
                 out.action = Some(RowAction::ToggleFold(fold.group));
                 ui.close_menu();
             }
