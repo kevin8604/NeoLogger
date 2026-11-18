@@ -3251,10 +3251,6 @@ impl NeoLogApp {
                 self.preset_name = truncate_chars(self.filter_input.trim(), 24);
                 self.preset_open = true;
             }
-            if ui.button("预设").on_hover_text("保存或套用查询").clicked() {
-                self.preset_name = truncate_chars(self.filter_input.trim(), 24);
-                self.preset_open = true;
-            }
         });
         if let Some(error) = &self.filter_error {
             ui.label(
