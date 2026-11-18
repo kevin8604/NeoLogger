@@ -1,12 +1,14 @@
 mod declarative;
 mod generic;
 mod jsonl;
+mod mcap;
 mod python;
 mod ros2;
 
 pub use declarative::{load_dir, DeclarativePlugin, LoadReport};
 pub use generic::GenericPlugin;
 pub use jsonl::JsonLinesPlugin;
+pub use mcap::McapPlugin;
 pub use python::PythonLogPlugin;
 pub use ros2::Ros2Plugin;
 
@@ -16,6 +18,7 @@ use neolog_core::plugin::LogPlugin;
 
 pub fn builtin_plugins() -> Vec<Arc<dyn LogPlugin>> {
     vec![
+        Arc::new(McapPlugin),
         Arc::new(Ros2Plugin),
         Arc::new(PythonLogPlugin),
         Arc::new(JsonLinesPlugin),
@@ -109,6 +112,41 @@ mod tests {
     }
 
     #[test]
+    fn mcap_history_is_a_child_of_the_bag() {
+        let dir = std::env::temp_dir().join(format!("neolog-mcap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bag.mcap");
+        std::fs::write(&path, sample_mcap()).unwrap();
+        let mut session = Session::new(registry());
+        let doc = session.open_path(&path).unwrap();
+        assert_eq!(session.doc(doc).unwrap().plugin_id, "mcap");
+        let root = session.create_doc_view(doc).unwrap();
+        let log = session.view(root).unwrap().children[0];
+        assert_eq!(session.view(log).unwrap().title, "日志");
+        assert!(session.visible_len(log) >= 1);
+        assert!(session.visible_len(root) > session.visible_len(log));
+        let topic = session
+            .open_mcap_history(root, neolog_core::HistoryKind::Topic("/rosout".into()))
+            .unwrap();
+        let again = session
+            .open_mcap_history(root, neolog_core::HistoryKind::Topic("/rosout".into()))
+            .unwrap();
+        assert_eq!(topic, again);
+        assert!(session.visible_len(topic) >= 1);
+        let changes = session
+            .open_mcap_history(
+                root,
+                neolog_core::HistoryKind::Changes {
+                    topic: "/rosout".into(),
+                    field: "temp".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(session.visible_len(changes), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn detects_json_lines_and_fields() {
         let mut s = Session::new(registry());
         let doc = s.open_text(
@@ -128,5 +166,67 @@ mod tests {
             plugin.severity(d.line_text(0)),
             Some(neolog_core::Severity::Error)
         );
+    }
+
+    fn push_string(buf: &mut Vec<u8>, text: &str) {
+        buf.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        buf.extend_from_slice(text.as_bytes());
+    }
+
+    fn push_record(buf: &mut Vec<u8>, op: u8, payload: &[u8]) {
+        buf.push(op);
+        buf.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        buf.extend_from_slice(payload);
+    }
+
+    fn sample_mcap() -> Vec<u8> {
+        let mut buf = vec![0x89, b'M', b'C', b'A', b'P', b'0', b'\r', b'\n'];
+        let mut schema = Vec::new();
+        schema.extend_from_slice(&1u16.to_le_bytes());
+        push_string(&mut schema, "foxglove.Log");
+        push_string(&mut schema, "jsonschema");
+        schema.extend_from_slice(&0u32.to_le_bytes());
+        push_record(&mut buf, 0x03, &schema);
+        let mut channel = Vec::new();
+        channel.extend_from_slice(&1u16.to_le_bytes());
+        channel.extend_from_slice(&1u16.to_le_bytes());
+        push_string(&mut channel, "/rosout");
+        push_string(&mut channel, "json");
+        channel.extend_from_slice(&0u32.to_le_bytes());
+        push_record(&mut buf, 0x04, &channel);
+        let mut image_schema = Vec::new();
+        image_schema.extend_from_slice(&2u16.to_le_bytes());
+        push_string(&mut image_schema, "sensor_msgs/msg/Image");
+        push_string(&mut image_schema, "");
+        image_schema.extend_from_slice(&0u32.to_le_bytes());
+        push_record(&mut buf, 0x03, &image_schema);
+        let mut image_channel = Vec::new();
+        image_channel.extend_from_slice(&2u16.to_le_bytes());
+        image_channel.extend_from_slice(&2u16.to_le_bytes());
+        push_string(&mut image_channel, "/camera/image");
+        push_string(&mut image_channel, "cdr");
+        image_channel.extend_from_slice(&0u32.to_le_bytes());
+        push_record(&mut buf, 0x04, &image_channel);
+        for (sec, temp) in [(1u64, 1), (2u64, 1), (3u64, 2)] {
+            let ns = sec * 1_000_000_000;
+            let payload = format!(
+                "{{\"level\":\"INFO\",\"name\":\"lidar\",\"msg\":\"temp\",\"temp\":{temp}}}"
+            );
+            let mut message = Vec::new();
+            message.extend_from_slice(&1u16.to_le_bytes());
+            message.extend_from_slice(&1u32.to_le_bytes());
+            message.extend_from_slice(&ns.to_le_bytes());
+            message.extend_from_slice(&ns.to_le_bytes());
+            message.extend_from_slice(payload.as_bytes());
+            push_record(&mut buf, 0x05, &message);
+        }
+        let mut image = Vec::new();
+        image.extend_from_slice(&2u16.to_le_bytes());
+        image.extend_from_slice(&1u32.to_le_bytes());
+        image.extend_from_slice(&1_500_000_000u64.to_le_bytes());
+        image.extend_from_slice(&1_500_000_000u64.to_le_bytes());
+        image.extend_from_slice(&[9, 9, 9, 9]);
+        push_record(&mut buf, 0x05, &image);
+        buf
     }
 }

@@ -2,6 +2,7 @@ pub mod bits;
 pub mod correlate;
 pub mod filter;
 pub mod matcher;
+pub mod mcap;
 pub mod merge;
 pub mod persist;
 pub mod plugin;
@@ -14,6 +15,7 @@ pub mod time;
 pub use bits::Bitmap;
 pub use correlate::{correlation_ids, line_has_id, CorrelationId};
 pub use filter::{parse_query, Filter, MatchCtx, Query};
+pub use mcap::{HistoryKind, McapCatalog, McapNode, McapProp, McapTopic};
 pub use persist::{MatcherSnapshot, SessionSnapshot};
 pub use plugin::{PluginRegistry, Severity};
 pub use session::{

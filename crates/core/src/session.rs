@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::bits::Bitmap;
 use crate::filter::{parse_query, MatchCtx, Query};
+use crate::mcap::{self, HistoryKind};
 use crate::merge::merge_docs;
 use crate::plugin::{LogPlugin, PluginRegistry};
 use crate::source::{DocId, LineRef, LogDoc, TextEncoding};
@@ -291,6 +292,7 @@ impl Session {
             },
         };
         self.rebuild_all();
+        self.rebuild_mcap_series();
         self.touch();
         Ok(ReloadReport {
             lines,
@@ -479,8 +481,182 @@ impl Session {
         };
         self.push_view(node);
         self.roots.push(id);
+        if self
+            .docs
+            .get(doc as usize)
+            .and_then(|doc| doc.mcap())
+            .is_some()
+        {
+            if self.fork_view(id, "field:log=1").is_ok() {
+                if let Some(child) = self.view(id).and_then(|view| view.children.last().copied()) {
+                    self.set_view_meta(child, "日志", "日志型通道");
+                }
+            }
+        }
         self.touch();
         Some(id)
+    }
+
+    /// Opens the history of a topic, a publisher node, or one property.
+    /// Property histories are change-only lines appended after the messages.
+    /// Asking for the same history again returns the existing child view.
+    pub fn open_mcap_history(&mut self, root: ViewId, kind: HistoryKind) -> Result<ViewId, String> {
+        let query = kind.query();
+        if let Some(existing) = self.find_query(root, &query) {
+            return Ok(existing);
+        }
+        let doc = self
+            .root_doc(root)
+            .ok_or_else(|| "这个标签没有 MCAP 文档".to_string())?;
+        if self
+            .docs
+            .get(doc as usize)
+            .and_then(|doc| doc.mcap())
+            .is_none()
+        {
+            return Err("当前文档不是 MCAP".to_string());
+        }
+        let truncated = if let Some(key) = kind.series_key() {
+            self.materialize_series(doc, &key)?
+        } else {
+            false
+        };
+        let id = self.fork_view(root, &query)?;
+        let note = if truncated {
+            "原始采样已保留前 10000 行"
+        } else {
+            ""
+        };
+        self.set_view_meta(id, &kind.title(), note);
+        Ok(id)
+    }
+
+    fn root_doc(&self, root: ViewId) -> Option<DocId> {
+        match self.view(root).map(|view| &view.base) {
+            Some(Base::Doc(doc)) => Some(*doc),
+            _ => None,
+        }
+    }
+
+    fn find_query(&self, root: ViewId, query: &str) -> Option<ViewId> {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.view(id) else {
+                continue;
+            };
+            if id != root && node.query == query {
+                return Some(id);
+            }
+            stack.extend(node.children.iter().copied());
+        }
+        None
+    }
+
+    fn materialize_series(&mut self, doc: DocId, key: &str) -> Result<bool, String> {
+        let mut keys = self
+            .docs
+            .get(doc as usize)
+            .and_then(|document| document.mcap())
+            .map(|catalog| catalog.series.clone())
+            .ok_or_else(|| "当前文档不是 MCAP".to_string())?;
+        if !keys.iter().any(|existing| existing == key) {
+            keys.push(key.to_string());
+        }
+        Ok(self.rewrite_series(doc, &keys))
+    }
+
+    /// Rebuilds property-history lines after a reload or session restore.
+    pub(crate) fn rebuild_mcap_series(&mut self) {
+        let mut by_doc: BTreeMap<DocId, Vec<String>> = BTreeMap::new();
+        let views: Vec<(ViewId, String)> = self
+            .views
+            .iter()
+            .flatten()
+            .filter(|view| view.query.starts_with("field:series="))
+            .map(|view| (view.id, view.query.clone()))
+            .collect();
+        for (id, query) in views {
+            let Some(key) = query.strip_prefix("field:series=") else {
+                continue;
+            };
+            let Some(root) = self.view_path(id).first().copied() else {
+                continue;
+            };
+            let Some(doc) = self.root_doc(root) else {
+                continue;
+            };
+            if self
+                .docs
+                .get(doc as usize)
+                .and_then(|document| document.mcap())
+                .is_none()
+            {
+                continue;
+            }
+            let list = by_doc.entry(doc).or_default();
+            if !list.iter().any(|existing| existing == key) {
+                list.push(key.to_string());
+            }
+        }
+        for (doc, keys) in by_doc {
+            self.rewrite_series(doc, &keys);
+        }
+    }
+
+    fn rewrite_series(&mut self, doc: DocId, keys: &[String]) -> bool {
+        if let Some(document) = self.docs.get_mut(doc as usize) {
+            document.retain_message_prefix();
+            if let Some(catalog) = document.mcap.as_mut() {
+                catalog.series = keys.to_vec();
+            }
+        }
+        let message_lines = self
+            .docs
+            .get(doc as usize)
+            .and_then(|document| document.mcap())
+            .map(|catalog| catalog.message_lines)
+            .unwrap_or(0);
+        let lines: Vec<String> = (0..message_lines)
+            .filter_map(|idx| {
+                self.docs
+                    .get(doc as usize)
+                    .map(|document| document.line_text(idx).to_string())
+            })
+            .collect();
+        let borrowed: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let mut extra = String::new();
+        let mut truncated = false;
+        for series in keys {
+            let Some((topic, field, raw)) = split_series(series) else {
+                continue;
+            };
+            let (text, cut) = mcap::project_history(&borrowed, &topic, &field, raw);
+            truncated |= cut;
+            extra.push_str(&text);
+        }
+        if let Some(document) = self.docs.get_mut(doc as usize) {
+            document.append_owned(&extra);
+        }
+        if let Some(set) = self.bookmarks.get_mut(&doc) {
+            set.retain(|line| (*line as usize) < message_lines);
+            if set.is_empty() {
+                self.bookmarks.remove(&doc);
+            }
+        }
+        let plugin = self.plugin_for_id(doc);
+        if let Some(document) = self.docs.get_mut(doc as usize) {
+            apply_plugin(document, plugin.as_ref());
+        }
+        self.rebuild_all();
+        self.touch();
+        truncated
+    }
+
+    fn plugin_for_id(&self, doc: DocId) -> Arc<dyn LogPlugin> {
+        self.docs.get(doc as usize).map_or_else(
+            || self.plugins.fallback(),
+            |document| self.plugins.by_id(&document.plugin_id),
+        )
     }
 
     pub fn create_merged_view(
@@ -1014,6 +1190,16 @@ fn apply_plugin(doc: &mut LogDoc, plugin: &dyn LogPlugin) {
         time::build_timeline(doc.len(), |i| plugin.timestamp(doc.line_text(i), day_base));
     doc.set_times(timeline.times);
     doc.set_owned(timeline.owned);
+}
+
+fn split_series(key: &str) -> Option<(String, String, bool)> {
+    let raw = key.ends_with("#raw");
+    let key = key.strip_suffix("#raw").unwrap_or(key);
+    let (topic, field) = key.split_once('#')?;
+    if topic.is_empty() || field.is_empty() {
+        return None;
+    }
+    Some((topic.to_string(), field.to_string(), raw))
 }
 
 fn truncate(text: &str, max_chars: usize) -> String {

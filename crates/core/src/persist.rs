@@ -170,6 +170,7 @@ impl Session {
         fresh.restore_bookmarks(snapshot);
         fresh.recompute_bookmark_views();
         fresh.restore_rules(snapshot)?;
+        fresh.rebuild_mcap_series();
         *self = fresh;
         Ok(RestoreReport { missing })
     }

@@ -1,8 +1,10 @@
 use std::fs::File;
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
 use memmap2::Mmap;
+
+use crate::mcap::{self, McapCatalog};
 
 pub type DocId = u32;
 pub type LineNo = u32;
@@ -82,6 +84,9 @@ pub struct LogDoc {
     /// When set, reloads read into memory and drop the file so another process
     /// can truncate or replace it. A live mapping blocks copytruncate on Windows.
     pub unmapped: bool,
+    /// Present when the file was an MCAP bag. Payloads are not retained; the
+    /// text is one short line per message plus any history projection.
+    pub mcap: Option<McapCatalog>,
 }
 
 impl LogDoc {
@@ -97,7 +102,16 @@ impl LogDoc {
         forced: Option<TextEncoding>,
     ) -> io::Result<Self> {
         let path = path.into();
-        let file = File::open(&path)?;
+        let mut file = File::open(&path)?;
+        if forced.is_none() {
+            let mut magic = [0u8; 8];
+            let read = file.read(&mut magic)?;
+            file.seek(SeekFrom::Start(0))?;
+            if read == 8 && mcap::is_mcap(&magic) {
+                let bytes = std::fs::read(&path)?;
+                return Ok(doc_from_mcap(id, path, &bytes));
+            }
+        }
         if file.metadata()?.len() == 0 {
             return Ok(Self::from_text(
                 id,
@@ -164,7 +178,51 @@ impl LogDoc {
             encoding,
             missing,
             unmapped: false,
+            mcap: None,
         }
+    }
+
+    pub fn mcap(&self) -> Option<&McapCatalog> {
+        self.mcap.as_ref()
+    }
+
+    /// Drops generated history lines so message lines stay at their old indexes.
+    pub fn retain_message_prefix(&mut self) {
+        let Some(count) = self.mcap.as_ref().map(|catalog| catalog.message_lines) else {
+            return;
+        };
+        if count >= self.len() {
+            return;
+        }
+        let lines: Vec<String> = (0..count)
+            .map(|idx| self.line_text(idx).to_string())
+            .collect();
+        let mut text = lines.join("\n");
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        self.text = Text::Owned(text.into_boxed_str());
+        self.starts = line_starts(self.text.bytes());
+    }
+
+    pub fn append_owned(&mut self, extra: &str) {
+        if extra.is_empty() {
+            return;
+        }
+        let mut text = match &self.text {
+            Text::Owned(text) => text.to_string(),
+            Text::Mapped(map) => String::from_utf8_lossy(map).into_owned(),
+        };
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(extra);
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        self.text = Text::Owned(text.into_boxed_str());
+        self.starts = line_starts(self.text.bytes());
+        self.unmapped = true;
     }
 
     /// Reads the whole file into memory and closes it. Used while following so
@@ -176,6 +234,9 @@ impl LogDoc {
     ) -> io::Result<Self> {
         let path = path.into();
         let bytes = std::fs::read(&path)?;
+        if forced.is_none() && mcap::is_mcap(&bytes) {
+            return Ok(doc_from_mcap(id, path, &bytes));
+        }
         let (text, encoding) = if bytes.is_empty() {
             (
                 Text::Owned(Box::from("")),
@@ -278,6 +339,20 @@ impl LogDoc {
     pub fn has_times(&self) -> bool {
         self.times.iter().any(|t| *t != crate::time::UNKNOWN)
     }
+}
+
+fn doc_from_mcap(id: DocId, path: PathBuf, bytes: &[u8]) -> LogDoc {
+    let decoded = mcap::decode(bytes);
+    let mut doc = LogDoc::from_text(
+        id,
+        path,
+        Text::Owned(decoded.text.into_boxed_str()),
+        TextEncoding::Utf8,
+        false,
+    );
+    doc.mcap = Some(decoded.catalog);
+    doc.unmapped = true;
+    doc
 }
 
 fn keep_mapped(bytes: &[u8], forced: Option<TextEncoding>) -> bool {

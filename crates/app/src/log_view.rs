@@ -1553,12 +1553,8 @@ fn draw_cell<'a, 'b>(
     let mut local = Vec::new();
     if let Some((start, end)) = cell.range {
         for span in spans {
-            let from = floor_boundary(text, span.start.max(start) - start);
-            let to = floor_boundary(text, span.end.min(end) - start);
-            if from < to {
-                if let Some(mapped) = StyledSpan::new(from, to, span.style) {
-                    local.push(mapped);
-                }
+            if let Some(mapped) = span_in_slice(text, start, end, span) {
+                local.push(mapped);
             }
         }
     }
@@ -1738,12 +1734,8 @@ fn draw_wrapped_row(
         let mut local = Vec::new();
         let segment = &text[start..end];
         for span in spans {
-            let from = floor_boundary(segment, span.start.max(start) - start);
-            let to = floor_boundary(segment, span.end.min(end) - start);
-            if from < to {
-                if let Some(mapped) = StyledSpan::new(from, to, span.style) {
-                    local.push(mapped);
-                }
+            if let Some(mapped) = span_in_slice(segment, start, end, span) {
+                local.push(mapped);
             }
         }
         let job = styled_job(segment, base_color, row_style.bold, &local, font_size);
@@ -1966,6 +1958,25 @@ fn styled_job(
     job
 }
 
+/// Maps a line-absolute span onto a cell or wrap slice. Spans that end before
+/// the slice, or start after it, are skipped. Subtracting those offsets used
+/// to overflow when the column view painted a later cell.
+fn span_in_slice(
+    slice: &str,
+    slice_start: usize,
+    slice_end: usize,
+    span: &StyledSpan,
+) -> Option<StyledSpan> {
+    let from_abs = span.start.max(slice_start);
+    let to_abs = span.end.min(slice_end);
+    if from_abs >= to_abs {
+        return None;
+    }
+    let from = floor_boundary(slice, from_abs - slice_start);
+    let to = floor_boundary(slice, to_abs - slice_start);
+    StyledSpan::new(from, to, span.style)
+}
+
 fn floor_boundary(text: &str, mut idx: usize) -> usize {
     idx = idx.min(text.len());
     while idx > 0 && !text.is_char_boundary(idx) {
@@ -1989,6 +2000,20 @@ mod tests {
         let view = session.create_doc_view(doc).unwrap();
         let lr = session.line_ref(view, 0).unwrap();
         (session, lr)
+    }
+
+    #[test]
+    fn span_before_a_column_cell_is_skipped() {
+        let style = TextStyle {
+            fg: Some(Rgb::new(200, 80, 80)),
+            ..TextStyle::default()
+        };
+        let severity = StyledSpan::new(0, 5, style).unwrap();
+        let message = "timeout while waiting";
+        assert!(span_in_slice(message, 20, 20 + message.len(), &severity).is_none());
+
+        let mapped = span_in_slice("ROR timeout", 2, 13, &severity).unwrap();
+        assert_eq!((mapped.start, mapped.end), (0, 3));
     }
 
     #[test]

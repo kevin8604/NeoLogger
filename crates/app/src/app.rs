@@ -8,8 +8,9 @@ use eframe::egui::{self, Align, Align2, Key, Layout, Modifiers, RichText, TextEd
 use neolog_core::matcher::{SearchMatcher, SearchOptions};
 use neolog_core::DocId;
 use neolog_core::{
-    format_ts, Base, HighlightRule, LineRef, PluginRegistry, ReloadMode, Rgb, RuleScope, Session,
-    SessionSnapshot, Severity, TextEncoding, TextStyle, ViewId,
+    format_ts, Base, HighlightRule, HistoryKind, LineRef, McapNode, McapTopic, PluginRegistry,
+    ReloadMode, Rgb, RuleScope, Session, SessionSnapshot, Severity, TextEncoding, TextStyle,
+    ViewId,
 };
 use neolog_plugins::builtin_plugins;
 use notify::Watcher;
@@ -97,6 +98,7 @@ pub struct NeoLogApp {
     filter_bar_open: bool,
     sidebar_open: bool,
     sidebar_guard: bool,
+    mcap_expanded: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -376,7 +378,7 @@ impl NeoLogApp {
             preset_open: false,
             preset_name: String::new(),
             dir_pop: None,
-            dir_glob: "*.log,*.txt,*.out,*.err,*.jsonl,*.log.*".to_string(),
+            dir_glob: "*.log,*.txt,*.out,*.err,*.jsonl,*.log.*,*.mcap".to_string(),
             watched: Vec::new(),
             watcher: None,
             wrap: false,
@@ -419,6 +421,7 @@ impl NeoLogApp {
             filter_bar_open: ui_prefs.filter_bar_open.unwrap_or(true),
             sidebar_open: ui_prefs.sidebar_open.unwrap_or(false),
             sidebar_guard: false,
+            mcap_expanded: HashSet::new(),
         };
         app.arm_watch();
         app
@@ -1851,7 +1854,7 @@ impl NeoLogApp {
 
     fn pick_files(&mut self) {
         if let Some(paths) = rfd::FileDialog::new()
-            .add_filter("日志文件", &["log", "txt", "out", "err", "jsonl"])
+            .add_filter("日志文件", &["log", "txt", "out", "err", "jsonl", "mcap"])
             .add_filter("所有文件", &["*"])
             .pick_files()
         {
@@ -2176,7 +2179,7 @@ impl NeoLogApp {
     fn open_directory(&mut self, dir: PathBuf, glob: &str) {
         let patterns = split_globs(glob);
         let patterns = if patterns.is_empty() {
-            split_globs("*.log,*.txt,*.out,*.err,*.jsonl,*.log.*")
+            split_globs("*.log,*.txt,*.out,*.err,*.jsonl,*.log.*,*.mcap")
         } else {
             patterns
         };
@@ -3460,6 +3463,250 @@ impl NeoLogApp {
         }
     }
 
+    fn open_mcap_history(&mut self, doc: DocId, kind: HistoryKind) {
+        let root = if let Some(root) = doc_root(&self.session, doc) {
+            root
+        } else if let Some(root) = self.session.create_doc_view(doc) {
+            root
+        } else {
+            self.status = "无法为这个文件建立视图".to_string();
+            return;
+        };
+        match self.session.open_mcap_history(root, kind) {
+            Ok(view) => {
+                let path = self.session.view_path(view);
+                let rows = self.session.visible_len(view);
+                self.set_active_path(path);
+                self.status = format!("已打开历史 · {rows} 行");
+            }
+            Err(error) => self.status = error,
+        }
+    }
+
+    fn mcap_panel(&mut self, ui: &mut Ui) {
+        let docs: Vec<(DocId, String)> = self
+            .session
+            .docs()
+            .iter()
+            .filter(|doc| doc.mcap().is_some())
+            .map(|doc| (doc.id, doc.short_name()))
+            .collect();
+        if docs.is_empty() {
+            return;
+        }
+        let mut action = None;
+        for (doc, name) in docs {
+            let Some(catalog) = self.session.doc(doc).and_then(|doc| doc.mcap()) else {
+                continue;
+            };
+            let topics = catalog.topics.clone();
+            let nodes = catalog.nodes.clone();
+            let error = catalog.error.clone();
+            let messages = catalog.message_lines;
+            theme::card().show(ui, |ui| {
+                ui.label(
+                    RichText::new(theme::marked(theme::ICON_LIBRARY, &name))
+                        .size(12.0)
+                        .strong(),
+                );
+                ui.label(
+                    RichText::new(format!(
+                        "{messages} 条消息 · {} 个 topic · {} 个节点",
+                        topics.len(),
+                        nodes.len()
+                    ))
+                    .size(10.5)
+                    .color(theme::p().faint),
+                );
+                if let Some(error) = &error {
+                    ui.label(
+                        RichText::new(error)
+                            .size(10.5)
+                            .color(theme::ink(Severity::Error.color())),
+                    );
+                }
+                ui.add_space(2.0);
+                ui.label(RichText::new("Topic").size(11.0).color(theme::p().dim));
+                self.topic_forest(ui, doc, &topics, &mut action);
+                ui.add_space(4.0);
+                ui.label(RichText::new("节点").size(11.0).color(theme::p().dim));
+                if nodes.is_empty() {
+                    ui.label(
+                        RichText::new("消息里没有发布者名称")
+                            .size(10.5)
+                            .color(theme::p().faint),
+                    );
+                }
+                for node in &nodes {
+                    self.node_row(ui, doc, node, &mut action);
+                }
+            });
+            ui.add_space(4.0);
+        }
+        if let Some((doc, kind)) = action {
+            self.open_mcap_history(doc, kind);
+        }
+    }
+
+    fn topic_forest(
+        &mut self,
+        ui: &mut Ui,
+        doc: DocId,
+        topics: &[McapTopic],
+        action: &mut Option<(DocId, HistoryKind)>,
+    ) {
+        let mut roots: Vec<TopicBranch> = Vec::new();
+        for topic in topics {
+            let segments: Vec<&str> = topic
+                .name
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .collect();
+            insert_topic(&mut roots, &segments, "", topic);
+        }
+        let seen = format!("{doc}:mcap-seen");
+        if self.mcap_expanded.insert(seen) {
+            for branch in &roots {
+                self.mcap_expanded
+                    .insert(format!("{doc}:topic:{}", branch.path));
+            }
+        }
+        for branch in &roots {
+            self.show_branch(ui, doc, branch, 0, action);
+        }
+    }
+
+    fn show_branch(
+        &mut self,
+        ui: &mut Ui,
+        doc: DocId,
+        branch: &TopicBranch,
+        depth: usize,
+        action: &mut Option<(DocId, HistoryKind)>,
+    ) {
+        let key = format!("{doc}:topic:{}", branch.path);
+        let open = self.mcap_expanded.contains(&key);
+        ui.horizontal(|ui| {
+            ui.add_space(depth as f32 * 10.0);
+            let mark = if branch.children.is_empty() && branch.topic.is_none() {
+                "·"
+            } else if open {
+                "▾"
+            } else {
+                "▸"
+            };
+            if ui
+                .add(
+                    egui::Button::new(RichText::new(format!("{mark} {}", branch.name)).size(11.5))
+                        .frame(false),
+                )
+                .clicked()
+            {
+                if self.mcap_expanded.contains(&key) {
+                    self.mcap_expanded.remove(&key);
+                } else {
+                    self.mcap_expanded.insert(key.clone());
+                }
+            }
+            if let Some(topic) = &branch.topic {
+                ui.label(
+                    RichText::new(format!("{} · {}", topic.count, rate_label(topic.hz())))
+                        .size(10.0)
+                        .color(theme::p().faint),
+                );
+                if ui.small_button("历史").clicked() {
+                    *action = Some((doc, HistoryKind::Topic(topic.name.clone())));
+                }
+            }
+        });
+        if !open {
+            return;
+        }
+        if let Some(topic) = &branch.topic {
+            for prop in &topic.props {
+                ui.horizontal(|ui| {
+                    ui.add_space((depth as f32 + 1.0) * 10.0 + 8.0);
+                    let summary = if prop.numeric {
+                        format!(
+                            "{}  {}  {}..{}",
+                            prop.path,
+                            prop.last,
+                            fmt_num(prop.min),
+                            fmt_num(prop.max)
+                        )
+                    } else {
+                        format!("{}  {}", prop.path, truncate_chars(&prop.last, 18))
+                    };
+                    ui.label(RichText::new(summary).size(10.5).color(theme::p().dim));
+                    if ui.small_button("历史").clicked() {
+                        *action = Some((
+                            doc,
+                            HistoryKind::Changes {
+                                topic: topic.name.clone(),
+                                field: prop.path.clone(),
+                            },
+                        ));
+                    }
+                    if ui.small_button("原始").clicked() {
+                        *action = Some((
+                            doc,
+                            HistoryKind::Samples {
+                                topic: topic.name.clone(),
+                                field: prop.path.clone(),
+                            },
+                        ));
+                    }
+                });
+            }
+        }
+        for child in &branch.children {
+            self.show_branch(ui, doc, child, depth + 1, action);
+        }
+    }
+
+    fn node_row(
+        &mut self,
+        ui: &mut Ui,
+        doc: DocId,
+        node: &McapNode,
+        action: &mut Option<(DocId, HistoryKind)>,
+    ) {
+        let key = format!("{doc}:node:{}", node.name);
+        let open = self.mcap_expanded.contains(&key);
+        ui.horizontal(|ui| {
+            let mark = if open { "▾" } else { "▸" };
+            if ui
+                .add(
+                    egui::Button::new(RichText::new(format!("{mark} {}", node.name)).size(11.5))
+                        .frame(false),
+                )
+                .clicked()
+            {
+                if open {
+                    self.mcap_expanded.remove(&key);
+                } else {
+                    self.mcap_expanded.insert(key);
+                }
+            }
+            ui.label(
+                RichText::new(format!("{} · {}", node.count, rate_label(node_hz(node))))
+                    .size(10.0)
+                    .color(theme::p().faint),
+            );
+            if ui.small_button("历史").clicked() {
+                *action = Some((doc, HistoryKind::Node(node.name.clone())));
+            }
+        });
+        if open {
+            for topic in &node.topics {
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(RichText::new(topic).size(10.5).color(theme::p().dim));
+                });
+            }
+        }
+    }
+
     fn sidebar(&mut self, ui: &mut Ui) {
         ui.add_space(2.0);
         ui.horizontal(|ui| {
@@ -3475,6 +3722,7 @@ impl NeoLogApp {
             });
         });
         ui.add_space(2.0);
+        self.mcap_panel(ui);
 
         let docs: Vec<(
             DocId,
@@ -4822,6 +5070,74 @@ fn shortcut_section(ui: &mut Ui, title: &str, rows: &[(&str, &str)]) {
         });
 }
 
+struct TopicBranch {
+    name: String,
+    path: String,
+    topic: Option<McapTopic>,
+    children: Vec<TopicBranch>,
+}
+
+fn insert_topic(level: &mut Vec<TopicBranch>, segments: &[&str], path: &str, topic: &McapTopic) {
+    let Some((name, rest)) = segments.split_first() else {
+        return;
+    };
+    let next_path = if path.is_empty() {
+        (*name).to_string()
+    } else {
+        format!("{path}/{name}")
+    };
+    if let Some(branch) = level.iter_mut().find(|branch| branch.name == *name) {
+        if rest.is_empty() {
+            branch.topic = Some(topic.clone());
+        } else {
+            insert_topic(&mut branch.children, rest, &next_path, topic);
+        }
+        return;
+    }
+    let mut branch = TopicBranch {
+        name: (*name).to_string(),
+        path: next_path.clone(),
+        topic: None,
+        children: Vec::new(),
+    };
+    if rest.is_empty() {
+        branch.topic = Some(topic.clone());
+    } else {
+        insert_topic(&mut branch.children, rest, &next_path, topic);
+    }
+    level.push(branch);
+}
+
+fn rate_label(hz: f64) -> String {
+    if hz <= 0.0 {
+        "—".to_string()
+    } else if hz >= 10.0 {
+        format!("{hz:.0} Hz")
+    } else {
+        format!("{hz:.1} Hz")
+    }
+}
+
+fn node_hz(node: &McapNode) -> f64 {
+    if node.count < 2 || node.last_ns <= node.first_ns {
+        0.0
+    } else {
+        node.count as f64 / ((node.last_ns - node.first_ns) as f64 / 1_000_000_000.0)
+    }
+}
+
+fn fmt_num(value: Option<f64>) -> String {
+    value
+        .map(|number| {
+            if number.fract() == 0.0 && number.abs() < 1_000_000.0 {
+                format!("{number:.0}")
+            } else {
+                format!("{number:.3}")
+            }
+        })
+        .unwrap_or_else(|| "-".to_string())
+}
+
 fn view_tabs(session: &Session, root: ViewId) -> Vec<ViewId> {
     let mut out = Vec::new();
     let mut stack = vec![root];
@@ -4875,10 +5191,22 @@ fn under_root(session: &Session, leaf: ViewId, root: ViewId) -> bool {
 /// The level a tab reopens on: its remembered leaf while that view still hangs
 /// under the same root, otherwise the root itself.
 fn resolve_leaf(session: &Session, leaves: &HashMap<ViewId, ViewId>, root: ViewId) -> ViewId {
-    leaves
+    if let Some(leaf) = leaves
         .get(&root)
         .copied()
         .filter(|leaf| under_root(session, *leaf, root))
+    {
+        return leaf;
+    }
+    session
+        .view(root)
+        .and_then(|view| {
+            view.children.iter().copied().find(|id| {
+                session
+                    .view(*id)
+                    .is_some_and(|child| child.query == "field:log=1")
+            })
+        })
         .unwrap_or(root)
 }
 

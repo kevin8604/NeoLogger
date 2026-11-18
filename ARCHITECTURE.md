@@ -23,7 +23,7 @@
 ```
 neo_log/
 ├── crates/core       neolog-core    纯逻辑库：文档、时间、合并、过滤、样式、会话、视图树、位图、快照
-├── crates/plugins    neolog-plugins 内置插件：Generic / ROS 2 / Python logging / JSON Lines + JSON 声明式插件
+├── crates/plugins    neolog-plugins 内置插件：MCAP / Generic / ROS 2 / Python logging / JSON Lines + JSON 声明式插件
 ├── crates/app        neolog-app     egui 桌面应用（bin: NeoLogger）
 └── examples/plugins  动态插件 JSON 示例
 ```
@@ -41,13 +41,14 @@ neo_log/
 └───────────────────────────────┬─────────────────────────────────────────┘
                                 │ Session API
 ┌───────────────────────────────▼─────────────────────────────────────────┐
-│ crates/plugins：GenericPlugin · Ros2Plugin · PythonLogPlugin             │
+│ crates/plugins：McapPlugin · GenericPlugin · Ros2Plugin · PythonLogPlugin│
 │                 JsonLinesPlugin · DeclarativePlugin（JSON，运行时加载）  │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                 │ LogPlugin trait
 ┌───────────────────────────────▼─────────────────────────────────────────┐
 │ crates/core                                                             │
 │ source.rs  LogDoc / LineRef / DocId      time.rs   时间解析与格式化      │
+│ mcap.rs    MCAP 解码、目录、属性历史投影                                  │
 │ merge.rs   k 路稳定归并                  matcher.rs 大小写不敏感匹配      │
 │ filter.rs  查询 DSL → Filter             style.rs  HighlightRule/样式     │
 │ plugin.rs  LogPlugin / PluginRegistry    text.rs   双击取词               │
@@ -344,7 +345,7 @@ ColumnsCache::ensure(view, revision)
   → 选区矩形同理按格内前缀宽度绘制；命中用 galley.cursor_from_pos 得格内字节 + range.0
 ```
 
-内置插件各自负责切分：ROS 2 取 `[LEVEL] [time] [node]` 前缀，Python 取 `time - module - LEVEL - `，JSON Lines 的级别来自解析后的 `Severity::label()`、消息保留原始行，声明式插件用「前缀链」启发式——只接受起点依次向前、且间隔仅有分隔符的字段，消息中的同名级别词不会误判成列。列视图与软换行、折叠互斥，因为三者都要接管行的垂直布局；列宽缓存只在 `(view, revision)` 变化时重算。
+内置插件各自负责切分：ROS 2 取 `[LEVEL] [time] [node]` 前缀，Python 取 `time - module - LEVEL - `，JSON Lines 的级别来自解析后的 `Severity::label()`、消息保留原始行，MCAP 取制表符分列后的级别、topic 和正文，声明式插件用「前缀链」启发式——只接受起点依次向前、且间隔仅有分隔符的字段，消息中的同名级别词不会误判成列。装饰区间先和单元格求交，落在格子外的 span 直接跳过，再把重叠部分换算成格子内偏移，因此 `span.end < cell.start` 不会在 `usize` 减法上溢出。列视图与软换行、折叠互斥，因为三者都要接管行的垂直布局；列宽缓存只在 `(view, revision)` 变化时重算。
 
 ### 4.14 单行外壳、快捷键与帮助
 
@@ -386,6 +387,31 @@ ColumnsCache::ensure(view, revision)
 | 只显示模块 X | `module:<name>`，含空格时给模块名加引号 |
 | 在全部文件中搜索该词 | 填入查找框并打开全局搜索窗口 |
 | 展开 / 收起这 N 行 | 折叠模式下调用 `fold_cache.toggle`，组号与折叠徽标一致 |
+
+### 4.16 MCAP
+
+`.mcap` 在 `LogDoc::open` / `open_owned` 里认文件头 `\x89MCAP0\r\n`，整包读入内存后解码，不建立 mmap。`mcap::decode`（[mcap.rs](crates/core/src/mcap.rs)）按记录走 Schema、Channel、Message、Chunk、Attachment 和 Metadata。Chunk 的压缩只处理空字符串、`lz4` 和 `zstd`，解压一块、抽出消息、立刻丢掉载荷。记录不完整或 Chunk 解压失败时停在该偏移，已经生成的行保留，原因写进 `McapCatalog.error`。
+
+每条消息格式化成一行，字段用制表符分开：
+
+```
+MCAP <log_ns> <LEVEL> <topic> <schema> <log?> <node> <publish_ns> <stamp_ns> <k:v;...> <body>
+```
+
+`log?` 为 `1` 的是日志型通道：schema 像 `*/Log` 或 `foxglove.Log`，以及 JSON 里同时有级别和 `msg` / `message`。图像能从 CDR 头读出宽高时正文写 `宽x高 字节数`，其余二进制正文是 `binary NB`。正文截断到 4KB；标量字段在截断前写入 `k:v` 段，供 `field:` 和属性统计使用。排序用 `header.stamp`，没有则用 `log_time`。
+
+`McapCatalog` 挂在 `LogDoc.mcap` 上，不写入会话快照。里面是 topic（条数、起止时间、频率、属性的当前值 / 最小 / 最大 / 变化次数）和发布者节点（来自 JSON 的 `name` / `node`，CDR Log 的 name，或 Channel metadata 的 `callerid`）。侧栏用它画两棵树。
+
+打开后 `create_doc_view` 再派生 `field:log=1`，标题为「日志」。没有记住叶子时，标签回到这个子视图，所以默认看不到高频传感器。树上的按钮调用 `Session::open_mcap_history`：
+
+| 按钮 | 子视图查询 | 行内容 |
+| --- | --- | --- |
+| topic「历史」 | `field:topic=<path> field:series=-` | 该 topic 的原始消息 |
+| 节点「历史」 | `field:node=<name> field:series=-` | 该发布者的原始消息 |
+| 属性「历史」 | `field:series=<topic>#<field>` | 值变化才新增一行，正文带 `×次数` |
+| 属性「原始」 | `field:series=<topic>#<field>#raw` | 逐条取值，最多 10000 行 |
+
+同一查询已经存在时直接返回那个子视图。属性历史行追加在 `message_lines` 之后，`log?` 为 `0`，因此不进「日志」。再次生成时先裁回消息前缀，再按目录里记录的 series 重写。重载和会话恢复走 `rebuild_mcap_series`，用视图查询把这些投影行重建出来。跟随仍是整包重解，不是只读新增 Chunk。
 
 ## 5. 过滤 DSL
 
@@ -430,7 +456,7 @@ pub trait LogPlugin: Send + Sync {
 - `field_contains` 与 `field` 语义一致但无字符串分配，供 `field:` 过滤逐行调用；覆盖了 `field` 的插件必须同时覆盖它（JSON Lines 已覆盖）。
 - `detect_severity` / `decorate_severity` 用字节 token 扫描实现原 `\b` 语义，不再逐行跑正则；ROS 2 插件的 `[级别] [秒.纳秒] [模块]` 前缀由一次手动解析同时供 sniff / 时间戳 / 级别 / 模块 / 列视图 / 装饰使用。
 - 用户可在侧栏为单个文档改选插件，触发 `Session::set_doc_plugin` 重算该文档时间轴与所有视图。
-- 内置插件位于 [crates/plugins/src](crates/plugins/src)：ROS 2（`[INFO] [sec.nanos] [node]`）、Python logging（`asctime - name - LEVEL - msg`）、JSON Lines（`timestamp`/`level`/`module` 等字段，epoch 自动换算秒/毫秒/微秒/纳秒）、通用文本。
+- 内置插件位于 [crates/plugins/src](crates/plugins/src)：MCAP（制表符行，`topic` / `node` / `series` / 标量字段）、ROS 2（`[INFO] [sec.nanos] [node]`）、Python logging（`asctime - name - LEVEL - msg`）、JSON Lines（`timestamp`/`level`/`module` 等字段，epoch 自动换算秒/毫秒/微秒/纳秒）、通用文本。`McapPlugin` 的 sniff 分数是 0.99，高于 ROS 2 的 0.95，只匹配 `MCAP\t` 开头的行。
 
 ### 6.1 声明式 JSON 插件
 
@@ -513,10 +539,11 @@ pub trait LogPlugin: Send + Sync {
 9. **`time:` 按时刻取模**：直方图点击与 `time:` 过滤共用同一语义，跨天日志可直接筛出「每天 08:00–09:00」；代价是无法表达跨午夜区间或指定日期。
 10. **全局搜索扫文档而非视图**：结果是物理文件中的命中，不受当前过滤影响，点击后切到该文件的未过滤视图；代价是结果按文件顺序而非时间排列，且单次上限 5000 条。
 11. **列视图由插件切分而非固定正则**：每种格式的前缀规则本就写在插件里，列视图复用同一份解析，避免 UI 与插件对“模块从哪开始”给出两种答案；代价是无前缀的续行只能落在消息列，声明式插件对字段顺序有要求。
+12. **MCAP 先变成短行再进现有视图树**：过滤、书签、合并和子标签都不用第二套文档模型；代价是打开时要读完整包并生成每条消息一行，跟随也是整包重解。通用 protobuf / ROS 类型系统不在这条路径上，未知载荷只留摘要。
 
 ## 9. 验证
 
-- `cargo test --workspace`：core 65 项、plugins 17 项、app 15 项（直方图桶覆盖、间隙排序、追加/同长重写/轮转分类、无变化判定、行缓存按 revision/字号/查找键失效、整行选择在两个方向上的行范围、主题 id 往返与三套调色板差异、右键菜单查询转义与模块名引号、标签页记忆叶节点与回退/文档根查找、`ui.conf` 已知键解析与未知键忽略）全部通过，覆盖时间格式（含快速路径与正则兜底的一致性、`time:` 时刻解析与时间戳前缀剥离）、归并稳定性、过滤 DSL（含 `field:` / `time:`）、查找匹配器（正则/大小写/全词边界/字面量预筛不误杀、Unicode 折叠与非 ASCII 行回退、缓存键随查询与选项变化）、级别 token 扫描的边界语义、位图 rank/select、书签跨视图、重载时 Append/Rewrite 书签策略、移除过滤级后子视图上移重算、视图名称/备注的编辑与空名回退、子视图重算、插件探测、JSON Lines 解析、ROS 前缀手动解析、四种内置/声明式插件的列切分、会话快照往返（含备注）、声明式插件解析（含示例 JSON）、行缓存的 span 复用与失效、`field:` 快速扫描与原分词器的逐例一致性。
+- `cargo test --workspace`：core 78 项、plugins 18 项、app 19 项（直方图桶覆盖、间隙排序、追加/同长重写/轮转分类、无变化判定、行缓存按 revision/字号/查找键失效、整行选择在两个方向上的行范围、主题 id 往返与三套调色板差异、右键菜单查询转义与模块名引号、标签页记忆叶节点与回退/文档根查找、`ui.conf` 已知键解析与未知键忽略、分列格子外高亮不参与偏移、MCAP 解码 / lz4 Chunk / 坏尾保留 / 属性历史折叠与子视图复用）全部通过，覆盖时间格式（含快速路径与正则兜底的一致性、`time:` 时刻解析与时间戳前缀剥离）、归并稳定性、过滤 DSL（含 `field:` / `time:`）、查找匹配器（正则/大小写/全词边界/字面量预筛不误杀、Unicode 折叠与非 ASCII 行回退、缓存键随查询与选项变化）、级别 token 扫描的边界语义、位图 rank/select、书签跨视图、重载时 Append/Rewrite 书签策略、移除过滤级后子视图上移重算、视图名称/备注的编辑与空名回退、子视图重算、插件探测、JSON Lines 解析、ROS 前缀手动解析、内置/声明式插件的列切分、会话快照往返（含备注）、声明式插件解析（含示例 JSON）、行缓存的 span 复用与失效、`field:` 快速扫描与原分词器的逐例一致性。
 - 百万行基准 `cargo run --release --example perf -p neolog-plugins` 覆盖打开、五类过滤、无字段与 logfmt 两种 `field:` 扫描、查找扫描、可视行逐行解析与统计全量扫描，用于回归性能；行缓存的收益另用临时进程内基准测得（50 行 × 100 帧样式/span/LayoutJob 构建 3.97 ms → 94 µs），未作为常驻测试入库。
 - 运行时已通过截图确认：合并时间轴、级别背景色、粗体、CJK 字体、文档色条、多行标签条与过滤栏、规则统计；这项截图验证早于两次外壳改造（先是标签条 + 视图栈 + 派生面板替换多行嵌套标签与侧栏视图树，之后又把菜单收进 `☰`、侧栏改为浮层抽屉、统计改为浮动窗口并压缩状态栏），当前单行外壳同样未做截图回归；列对齐视图下时间/级别/模块/消息四列对齐、WARNING/CRITICAL 完整显示、续行落入消息列、预置选区跨单元格正确绘制。
 - 持久化、跟随、位图、动态插件、选择/换行/列对齐、`☰` 菜单与快捷键入口（菜单与过滤栏共用同一组 setter，含侧栏/过滤栏收起与展开；顶部工具栏与独立菜单行已合并进单行外壳）与 P0/P1（查找与查找选项、全局搜索、跳转/缩放、统计窗口、间隙检测、折叠、结构化字段）均通过编译与核心单测；GUI 交互（`☰` 子菜单展开与置灰、`F9` 侧栏抽屉与点击日志区收起、快捷键、跟随、F5 重载、拖选、软换行、列对齐切换与格内拖选、查找栏、全局搜索结果、折叠徽标、统计窗口拖动/缩放、直方图点击、重命名/备注与帮助/关于窗口）未做自动化回归，因为当前环境禁止模拟鼠标/键盘输入，仅由代码路径覆盖，建议手动验证一次。
